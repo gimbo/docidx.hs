@@ -2,25 +2,30 @@
 
 {-
 
- A tidy rewrite of an ugly Haskell port of a "horribly hacked
-together" Python script to generate an HTML index page for
-Haddock-generated Haskell package docs. It also works quite nicely as
-a general index for other docs. Note that the docs directory is
-hard-coded, below: see the comments there.
+A tidy rewrite of an ugly Haskell port of a "horribly hacked together"
+Python script to generate an HTML index page for Haddock-generated
+Haskell package docs. It also works quite nicely as a general index
+for other docs. Note that the docs directory is hard-coded, below: see
+the comments there.
 
-Ported from the Python code located at yonder blog:
-   <http://gimbo.org.uk/blog/2009/09/23/>
+Forked from: <http://github.com/andyprice/docidx.hs> which was ported
+from the python at: <http://gimbo.org.uk/blog/2009/09/23/>
 
 -}
 
+import Control.Monad
 import Data.Char (isAlpha, toUpper)
+import Data.Maybe
 import Data.List
 import Data.Ord
+import Data.Time
 import Data.Version
 import qualified Data.Map as M
 import System.Environment
 import System.FilePath
+import System.Locale
 import Text.Html
+import Text.HTML.TagSoup
 
 import Distribution.GhcPkgList
 
@@ -54,28 +59,68 @@ tocExtras = TocSeparator : map (uncurry TocItem) [
 
 -- And now the work begins.
 
--- | Main currently writes to stdio and a standard location.  Will fix later.
+homePage :: String
+homePage = "http://github.com/gimbo/docidx.hs"
+
 main :: IO ()
 main = do
   pkgs <- installedPackages
-  let page = htmlPage pkgs
+  syns <- packageSynopses pkgs
+  now <- getCurrentTime
+  let page = htmlPage pkgs syns now
   args <- getArgs
   if not (null args) then writeFile (head args) page else putStrLn page
 
+-- Computing package synopses by crawling haddock docs for installed
+-- packages.  Would love to get this info from Cabal directly, but at
+-- time of writing it doesn't expose synopses of installed packages -
+-- just their (longer) descriptions.
+
+-- | Crawl haddock docs for package synopses.
+packageSynopses :: PackageMap -> IO [(String, String)]
+packageSynopses pm = forM (pkgsHaddocks pm) $ \(nm, ph) -> do
+                       t <- packageTitle ph
+                       return (nm, t)
+
+-- | Turn a PackageMap into an association list of (package name,
+-- haddock path) pairs (for the first version of each package).
+pkgsHaddocks :: PackageMap -> [(String, String)]
+pkgsHaddocks pm = mapMaybe pkgHaddocks pm
+  where pkgHaddocks (nm, vs) = do (_, v1) <- mhead $ reverse vs
+                                  (_, haddocks) <- mhead v1
+                                  hp <- mhead haddocks
+                                  return (nm, hp)
+        mhead xs = if null xs then Nothing else Just (head xs)
+
+-- | Parses a HTML document to find its title tag
+packageTitle :: FilePath -> IO String
+packageTitle haddock = do
+    s <- readFile $ joinPath [haddock, "index.html"]
+    let t = findTitleTag $ canonicalizeTags $ parseTags s
+        w = words t
+    return $ if null w then t else unwords $ tail w
+  where findTitleTag ts = maybe "" (fromTagText . snd) $ seekT ts
+        seekT ts = find (isTagOpenName "title" . fst) (zip ts $ tail ts)
+
+-- Rendering page HTML.
+
 -- | Create and render entire page.
-htmlPage :: PackageMap -> String
-htmlPage pkgs = renderHtml [htmlHeader, htmlBody]
+htmlPage :: PackageMap -> [(String, String)] -> UTCTime -> String
+htmlPage pkgs syns now = renderHtml [htmlHeader, htmlBody]
   where htmlHeader = header << ((thetitle << pageTitle) : fav : css)
-        fav = thelink ![rel "shortcun icon", href favIcon] << noHtml
+        fav = thelink ![rel "shortcut icon", href favIcon] << noHtml
         css = map oneCss pageCss
         oneCss cp = thelink ![rel "stylesheet",
                               thetype "text/css", href cp] << noHtml
-        -- fav = <link rel="shortcut icon" href="http://sstatic.net/so/favicon.ico"> 
-        htmlBody = body << (title' ++ toc ++ sections)
+        htmlBody = body << (title' ++ toc ++ secs ++ nowFoot)
           where title' = [h2 << "Local packages with docs"]
                 toc = [htmlToc am]
-                sections = concatMap (uncurry htmlPackagesAlpha) $ M.assocs am
+                secs = concatMap (uncurry $ htmlPkgsAlpha syns) $ M.assocs am
                 am = alphabetize pkgs
+                now' = formatTime defaultTimeLocale rfc822DateFormat now
+                nowFoot = [p ![theclass "toc"] $
+                           stringToHtml ("Page rendered " ++ now' ++ " by ")
+                           +++ (anchor ![href homePage] << stringToHtml "docidx")]
 
 -- | An AlphaMap groups packages together by their name's first character.
 type AlphaMap = M.Map Char PackageMap
@@ -106,16 +151,17 @@ tocItemHtml TocSeparator = [mdash]
 tocItemHtml TocNewline = [br] -- Hmmm... you still get the bullets?
 
 -- | Render a collection of packages with the same first character.
-htmlPackagesAlpha :: Char -> PackageMap -> [Html]
-htmlPackagesAlpha c pm = [heading, packages]
+htmlPkgsAlpha :: [(String, String)] -> Char -> PackageMap -> [Html]
+htmlPkgsAlpha syns c pm = [heading, packages]
   where heading = h3 ![theclass "category"] << anchor ![name [c]] << [c]
         packages = ulist ![theclass "packages"] <<
-                     map (uncurry htmlPackage) pm'
+                     map (uncurry $ htmlPkg syns) pm'
         pm' = sortBy (comparing (map toUpper . fst)) pm
 
 -- | Render a particularly-named package (all versions of it).
-htmlPackage :: String -> VersionMap -> Html
-htmlPackage nm vs = li << pvsHtml (flattenPkgVersions nm vs)
+htmlPkg :: [(String, String)] -> String -> VersionMap -> Html
+htmlPkg syns nm vs = li << pvsHtml (flattenPkgVersions nm syn vs)
+  where syn = nm `lookup` syns
 
 -- | Everything we want to know about a particular version of a
 -- package, nicely flattened and ready to use.  (Actually, we'd also
@@ -125,6 +171,7 @@ htmlPackage nm vs = li << pvsHtml (flattenPkgVersions nm vs)
 -- seems excessive so for now we forget about it.
 data PkgVersion = PkgVersion {
     pvName ::String
+  , pvSynopsis :: Maybe String
   , pvVersion :: Version
   , pvExposed :: Bool
   , pvHaddocks :: Maybe FilePath
@@ -133,20 +180,21 @@ data PkgVersion = PkgVersion {
 -- | Flatten a given package's various versions into a list of
 -- PkgVersion values, which is much nicer to iterate over when
 -- building the HTML for this package.
-flattenPkgVersions :: String -> VersionMap -> [PkgVersion]
-flattenPkgVersions nm vs = concatMap (uncurry flatten') $ reverse vs
+flattenPkgVersions :: String -> Maybe String -> VersionMap -> [PkgVersion]
+flattenPkgVersions nm syn vs = concatMap (uncurry flatten') $ reverse vs
   where flatten' :: Version -> [VersionInfo] -> [PkgVersion]
         -- We reverse here to put user versions of pkgs before
         -- identically versioned global versions.
         flatten' v = concatMap (uncurry flatten'') . reverse
           where flatten'' :: Bool -> [FilePath] -> [PkgVersion]
-                flatten'' ex [] = [PkgVersion nm v ex Nothing]
-                flatten'' ex ps = map (PkgVersion nm v ex . Just) ps
+                flatten'' ex [] = [PkgVersion nm syn v ex Nothing]
+                flatten'' ex ps = map (PkgVersion nm syn v ex . Just) ps
 
 -- | Render the HTML for a list of versions of (we presume) the same
 -- package.
 pvsHtml :: [PkgVersion] -> Html
-pvsHtml pvs = pvHeader (head pvs) +++ spaceHtml +++ pvVersions pvs
+pvsHtml pvs = pvHeader (head pvs) +++ spaceHtml +++ pvVersions pvs +++
+                pvSyn pvs
 
 -- | Render the "header" part of some package's HTML: name (with link
 -- to default version of local docs if available) and hackage link.
@@ -166,6 +214,11 @@ pvVersions pvs = stringToHtml "[" +++
                   intersperse comma (map pvOneVer pvs) +++
                   stringToHtml "]"
   where pvOneVer pv = maybeURL (showVersion $ pvVersion pv) (pvHaddocks pv)
+
+-- | Render the synopsis of a package, if present.
+pvSyn :: [PkgVersion] -> Html
+pvSyn (pv:_) = maybe noHtml (\x -> mdash +++ stringToHtml x) $ pvSynopsis pv
+pvSyn _ = noHtml
 
 -- | Render a URL if there's a path; otherwise, just render some text.
 -- (Useful in cases where a package is installed but no documentation

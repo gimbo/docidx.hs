@@ -19,5 +19,6 @@ Cabal-Version:          >=1.6
 Executable docidx
   hs-source-dirs:       src
   Main-is:              docidx.hs
-  Build-Depends:        base >= 4, Cabal >= 1.8, containers >= 0.3, filepath >= 1.1, html >= 1.0, MissingH >= 1.1
+  Build-Depends:        base >= 4, Cabal >= 1.8, containers >= 0.3, filepath >= 1.1, html >= 1.0,
+                        MissingH >= 1.1, old-locale, tagsoup >= 0.11, time >= 1.1
   ghc-options:          -fwarn-tabs -Wall
