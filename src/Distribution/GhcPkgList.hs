@@ -1,103 +1,78 @@
--- | Get contents of installed packages by calling "ghc-pkg list" and
--- parsing the results.
---
--- Ideally we could re-use existing machinery to do this, but at time
--- of writing (April 2010) it doesn't seem to be exposed as part of
--- the Cabal package as one might expect (e.g. cabal-install uses its
--- own machinery).  It looks like a simple parse anyway, for our
--- purposes.
+-- | Get contents of installed packages by querying "ghc-pkg" via
+-- Cabal.
 
 module Distribution.GhcPkgList (
-  PkgDb(..),
-  PkgInfo(..),
-  listPackages,
-  readPkgName
+  PackageMap,
+  VersionMap,
+  VersionInfo,
+  installedPackages
 ) where
 
-import Control.Monad (when)
-import Data.List (intercalate)
-import Data.List.Utils (split)
-import System.IO
-import System.Process
-import Text.ParserCombinators.Parsec
+import Data.List.Utils (addToAL)
+import Data.Maybe (fromMaybe)
+import qualified Distribution.InstalledPackageInfo as I
+import qualified Distribution.Package as P
+import Distribution.Simple.Compiler (PackageDB(GlobalPackageDB,
+                                               UserPackageDB))
+import Distribution.Simple.GHC (getInstalledPackages)
+import Distribution.Simple.PackageIndex (PackageIndex, allPackagesByName)
+import Distribution.Simple.Program (ghcProgram, ghcPkgProgram)
+import Distribution.Simple.Program.Db (addKnownPrograms,
+                                       configureAllKnownPrograms,
+                                       emptyProgramDb)
+import Distribution.Verbosity (normal)
+import Distribution.Version (Version)
 
--- | A package database has a path and a list of packages.  We expect
--- there to be two: a global one, and a per-user one.
-data PkgDb = PkgDb {
-    dbPath :: FilePath,
-    dbPkgs :: [PkgInfo]
-  } deriving (Eq, Ord, Show)
+-- | A package map maps package names to information about the
+-- versions installed.
+type PackageMap = [(String, VersionMap)]
 
--- | A package has a name and a version, and may be hidden.
-data PkgInfo = PkgInfo {
-    pkgName :: String,
-    pkgVersion :: [Int],
-    pkgHidden :: Bool
-  } deriving (Eq, Ord)
+-- | A version map maps version numbers to information about the
+-- various installations of that version.
+type VersionMap = [(Version, [VersionInfo])]
 
-instance Show PkgInfo where
-  show (PkgInfo n v h) = if h then "(" ++ np ++ ")" else np
-    where np = n ++ "-" ++ (intercalate "." $ map show v)
+-- | The information we're interested about a version: is it exposed,
+-- and where are its Haddock docs installed?  (Not sure why there can
+-- be multiple haddock paths, but that's what Cabal gives us, so
+-- that's what we take.)
+type VersionInfo = (Bool, [FilePath])
 
--- nb: Haven't bothered with a Read instance yet.
+-- | Get exposure/haddock information about all versions of all
+-- installed packages.
+installedPackages :: IO PackageMap
+installedPackages = fmap groupPackages listInstalledPackages
 
--- | Return a list of package database information as reported by
--- calling "ghc-pkg list".
-listPackages :: IO [PkgDb]
-listPackages = do
-  ghcPkgOut <- runGhcPkg
-  case parse pkgDbs "" ghcPkgOut of
-    Left err -> error $ show err
-    Right x -> return x
+-- Nothing from here down is exposed.
 
--- | Given a package name string, turn it into a name and version.
-readPkgName :: String -> Maybe (String, [Int])
-readPkgName s = case ds of
-                  Just ds' -> Just (n, ds')
-                  Nothing -> Nothing
-  where n = intercalate "-" $ init parts
-        ds :: Maybe [Int]
-        ds = sequence $ map readInt $ split "." $ last parts
-        parts = split "-" s
+-- | Get the list of installed packages, via Cabal's existing
+-- machinery.
+listInstalledPackages :: IO PackageIndex
+listInstalledPackages =
+  let pdb = addKnownPrograms [ghcProgram,ghcPkgProgram] emptyProgramDb
+  in configureAllKnownPrograms normal pdb >>=
+         getInstalledPackages normal [GlobalPackageDB, UserPackageDB]
 
-        
+-- | Group installed package information together by package name and
+-- version number.
+groupPackages :: PackageIndex -> PackageMap
+groupPackages = foldr groupPackages' [] . allPackagesByName
 
--- Helpers from here on.
+groupPackages' :: [I.InstalledPackageInfo] -> PackageMap -> PackageMap
+groupPackages' ps pm = foldr groupPackages'' pm ps
 
--- | Run "ghc-pkg list" and capture its output.
-runGhcPkg :: IO String
-runGhcPkg = do
-  let cp = (proc "ghc-pkg" ["list"]) {
-             std_out = CreatePipe
-           }
-  (_, Just hOut, _, _) <- createProcess cp
-  hGetContents hOut
+groupPackages'' :: I.InstalledPackageInfo -> PackageMap -> PackageMap
+groupPackages'' ipi pm =
+  addToAL pm nm $ addToVersionMap vs' ver (ex, had)
+    where vs' = fromMaybe [] (nm `lookup` pm)
+          pid = I.sourcePackageId ipi
+          (P.PackageName nm) = P.pkgName pid
+          ver = P.pkgVersion pid
+          ex = I.exposed ipi
+          had = I.haddockHTMLs ipi
 
--- | Parser for "ghc-pkg list"'s entire output.
-pkgDbs :: Parser [PkgDb]
-pkgDbs = pkgDb `sepEndBy1` (many1 $ char '\n')
-
--- | Parser for a single package database.
-pkgDb :: Parser PkgDb
-pkgDb = do
-  path <- many1 (noneOf "\n")
-  ps <- many1 $ preSpace >> pkgInfo
-  return $ PkgDb path ps
-    where preSpace = try $ (option ' ' (char '\n')) >> (many1 $ char ' ')
-
--- | Parser for a single package's info.
-pkgInfo :: Parser PkgInfo
-pkgInfo = do
-  h <- option False (char '(' >> (return True))
-  ps <- (many $ choice [letter, digit, char '.']) `sepBy1` (char '-')
-  when h $ char ')' >> (return ())
-  let pn = readPkgName $ intercalate "-" ps
-  case pn of
-    Just (n, ds) -> return $ PkgInfo n ds h
-    Nothing -> error $ "Can't read package version: " ++ intercalate "-" ps
-
--- | Safe read of integer string
-readInt :: String -> Maybe Int
-readInt s = case (reads s) :: [(Int, String)] of
-              [(x, "")] -> Just x
-              _ -> Nothing
+addToVersionMap :: VersionMap -> Version -> VersionInfo -> VersionMap
+addToVersionMap vm v vi = addToAL vm v xs'
+  where xs' = case v `lookup` vm of
+                -- No duplicates please.
+                Just xs -> if vi `elem` xs then xs else xs ++ [vi]
+                Nothing -> [vi]

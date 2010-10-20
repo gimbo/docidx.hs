@@ -1,133 +1,188 @@
-{-
- - An ugly Haskell port of a "horribly hacked together" Python script to
- - generate an HTML index page for Haddock-generated Haskell package docs. It
- - also works quite nicely as a general index for other docs. Note that the
- - docs directory is hard-coded, below: see the comments there.
- -
- - Requires tagsoup and other non-prelude libraries (see the list of imports).
- -
- - Ported from the Python code located at yonder blog:
- -   <http://gimbo.org.uk/blog/2009/09/23/>
- -}
+#!/usr/bin/env runhaskell
 
-import List
-import Directory
-import Data.Char
+{-
+
+ A tidy rewrite of an ugly Haskell port of a "horribly hacked
+together" Python script to generate an HTML index page for
+Haddock-generated Haskell package docs. It also works quite nicely as
+a general index for other docs. Note that the docs directory is
+hard-coded, below: see the comments there.
+
+Ported from the Python code located at yonder blog:
+   <http://gimbo.org.uk/blog/2009/09/23/>
+
+-}
+
+import Data.Char (isAlpha, toUpper)
+import Data.List
+import Data.Ord
+import Data.Version
+import qualified Data.Map as M
+import System.Environment
 import System.FilePath
-import qualified Data.Set as Set
-import Text.HTML.TagSoup
 import Text.Html
 
-{-
- - This is the path to the docs.  Any subdirectory which contains an
- - 'html/index.html' will get an entry in the index (all the other are
- - listed separately at the end).
- -
- - The index is written to 'index.html' at this path.
- -}
+import Distribution.GhcPkgList
 
-docPath :: FilePath
-docPath = "/usr/share/doc"
+-- Here's some stuff which should be in a config file.
 
-data Package = Package { key :: Char
-                       , pname :: String
-                       , ptitle :: String
-                       , pkgPath :: FilePath }
+pageTitle :: String
+pageTitle = "Local Haskell package docs"
 
--- Generates the full path of a HTML doc index file
-htmlPath :: FilePath -> FilePath
-htmlPath lib = joinPath [docPath, lib, "html", "index.html"]
+pageCss :: [String]
+pageCss = ["http://hackage.haskell.org/packages/hackage.css"]
 
--- Recurses over a list of HTML tags to find the text in the title tag
-findTitleTag :: [Tag] -> String
-findTitleTag []     = ""
-findTitleTag (t:ts) = if isTagOpenName "title" t
-                  then fromTagText $ head ts
-                  else findTitleTag ts
+favIcon :: String
+favIcon = "http://hackage.haskell.org/images/Cabal-tiny.png"
 
--- Parses a HTML document to find its title tag
-packageTitle :: FilePath -> IO String
-packageTitle lib = do
-    s <- readFile $ joinPath [docPath, htmlPath lib]
-    return (findTitleTag $ canonicalizeTags $ parseTags s)
+tocExtras :: [TocItem]
+tocExtras = TocSeparator : map (uncurry TocItem) [
+  ("hackage", "http://hackage.haskell.org/packages/archive/pkg-list.html"),
+  ("stdlibs", ghcDocs ++ "libraries/index.html"),
+  ("index", "file:///Users/gimbo/.cabal/share/doc/index.html"),
+  ("prelude", ghcDocs ++ "libraries/base-4.2.0.0/Prelude.html"),
+  ("ghc", ghcDocs ++ "users_guide/index.html"),
+  ("report", "file:///Users/gimbo/Documents/prog/haskell/haskell98-report-html/index.html"),
+  ("parsec", "file:///Users/gimbo/Documents/prog/haskell/parsec/parsec.html"),
+  ("haddock", "file:///Users/gimbo/Documents/prog/haskell/haddock/index.html"),
+  ("quickcheck", "file:///Users/gimbo/Documents/prog/haskell/quickcheck/manual_body.html"),
+  ("(for parsec)", "file:///Users/gimbo/Documents/prog/haskell/quickcheck/qc_for_parsec/Parsec%20Parser%20Testing%20with%20QuickCheck%20%C2%AB%20lstephen.html"),
+  ("gtk2hs", "file:///Users/gimbo/Documents/prog/haskell/gtk2hs-docs-0.10.0/index.html"),
+  ("cabal", ghcDocs ++ "Cabal/index.html"),
+  ("nums", "http://book.realworldhaskell.org/read/using-typeclasses.html#numerictypes.conversion")]
+  where ghcDocs = "file:///Library/Frameworks/GHC.framework/Versions/Current/usr/share/doc/ghc/html/"
 
--- Creates a package object
-createPackage :: FilePath -> String -> Package
-createPackage lib t = Package (toUpper (head lib)) lib t (htmlPath lib)
+-- And now the work begins.
 
--- Creates a doc package and categorises it based on whether it has a HTML
--- index in the doc directory. If it has one, it is keyed by its initial
--- letter; if it doesn't, it gets a key of '\0'
-categorise :: FilePath -> IO Package
-categorise lib = do
-    x <- doesFileExist $ joinPath [docPath, (htmlPath lib)]
-    if x then do t <- packageTitle lib
-                 return (createPackage lib t)
-         else return (Package '\0' lib "" (joinPath [docPath, lib]))
-
--- Finds all the doc packages inside a directory
-libs :: FilePath -> IO [Package]
-libs path = do
-    dirs <- getDirectoryContents path
-    mapM categorise $ sort dirs
-
--- Returns a function which generates a list of initial-letter keys for a list
--- of packages
-keys :: [Package] -> [Char]
-keys = Set.toAscList . foldl (\u pkg -> Set.insert (key pkg) u) Set.empty
-
--- Creates the HTML code for this list of packages
-htmlPage :: [Package] -> [Html]
-htmlPage pkgs = [ htmlHeader, htmlBody pkgs ]
-
--- Creates the HTML header
-htmlHeader :: Html
-htmlHeader =
-    header << [ thetitle << "My Haskell Home Page"
-              , thelink ![ rel "stylesheet", thetype "text/css"
-                 , href "http://hackage.haskell.org/packages/hackage.css"] << noHtml]
-
--- Generates the HTML body of the index for a list of packages
-htmlBody :: [Package] -> Html
-htmlBody pkgs =
-    body << ([ h2 << "Local packages with docs"
-             , p ![ theclass "toc" ] << htmlTOC pkgs ]
-            ++ letterListings pkgs (tail $ keys pkgs)
-            ++ letterListings pkgs "\0")
-
--- Generates the table of contents for the index
-htmlTOC :: [Package] -> [Html]
-htmlTOC pkgs = intersperse (primHtml " &bull; ") anchors
-    where anchors = [ anchor ![ href ('#':[k]) ] << [k] |
-                            k <- tail $ keys pkgs ]
-
--- Generates the initial-letter-grouped sections of the index
-letterListings :: [Package] -> [Char] -> [Html]
-letterListings _    []       = [noHtml]
-letterListings pkgs ['\0']   =
-    [ h2 << "Directories without HTML docs"
-    , ulist << map packageItem (filter (('\0'==) . key) pkgs)
-    ]
-letterListings pkgs (k:ks) =
-    [ h3 ![theclass "category"] <<  anchor ![name [k]] << [k]
-    , ulist ![theclass "packages"]
-        << map packageItem (filter ((k==) . key) pkgs)
-    ] ++ letterListings pkgs ks
-
--- Generates a link to a package's index.html (if it exists) as a <li>
--- Here the key '\0' is used for the packages with no HTML index
--- so we just link to their directories.
-packageItem :: Package -> Html
-packageItem pkg =
-    li << [ anchor ![href $ "file://" ++ pkgPath pkg]
-                << stringToHtml (pname pkg),
-            stringToHtml t']
-    where t' = if t == "" then "" else ": " ++ t
-          t = ptitle pkg
-          
-
+-- | Main currently writes to stdio and a standard location.  Will fix later.
 main :: IO ()
 main = do
-    ps <- libs docPath
-    writeFile outFile $ show $ htmlPage ps
-    where outFile = joinPath [docPath, "index.html"]
+  pkgs <- installedPackages
+  let page = htmlPage pkgs
+  args <- getArgs
+  if not (null args) then writeFile (head args) page else putStrLn page
+
+-- | Create and render entire page.
+htmlPage :: PackageMap -> String
+htmlPage pkgs = renderHtml [htmlHeader, htmlBody]
+  where htmlHeader = header << ((thetitle << pageTitle) : fav : css)
+        fav = thelink ![rel "shortcun icon", href favIcon] << noHtml
+        css = map oneCss pageCss
+        oneCss cp = thelink ![rel "stylesheet",
+                              thetype "text/css", href cp] << noHtml
+        -- fav = <link rel="shortcut icon" href="http://sstatic.net/so/favicon.ico"> 
+        htmlBody = body << (title' ++ toc ++ sections)
+          where title' = [h2 << "Local packages with docs"]
+                toc = [htmlToc am]
+                sections = concatMap (uncurry htmlPackagesAlpha) $ M.assocs am
+                am = alphabetize pkgs
+
+-- | An AlphaMap groups packages together by their name's first character.
+type AlphaMap = M.Map Char PackageMap
+
+-- | Group packages together by their name's first character.
+alphabetize :: PackageMap -> AlphaMap
+alphabetize = foldr addAlpha M.empty
+  where addAlpha (n, vs) = M.insertWith (++) c [(n, vs)]
+          where c = if isAlpha c' then c' else '\0'
+                c' = toUpper $ head n
+
+-- | Elements of the table of contents.
+data TocItem = TocItem String String
+             | TocSeparator
+             | TocNewline
+               deriving (Eq, Ord, Show)
+
+-- | Generate the table of contents.
+htmlToc :: AlphaMap -> Html
+htmlToc am = p ![theclass "toc"] << tocHtml (alphaItems ++ tocExtras)
+  where tocHtml = intersperse bull . concatMap tocItemHtml
+        alphaItems = map (\k -> TocItem [k] ('#':[k])) $ sort $ M.keys am
+
+-- | Render toc elements to HTML.
+tocItemHtml :: TocItem -> [Html]
+tocItemHtml (TocItem nm path) = [anchor ![href path] << nm]
+tocItemHtml TocSeparator = [mdash]
+tocItemHtml TocNewline = [br] -- Hmmm... you still get the bullets?
+
+-- | Render a collection of packages with the same first character.
+htmlPackagesAlpha :: Char -> PackageMap -> [Html]
+htmlPackagesAlpha c pm = [heading, packages]
+  where heading = h3 ![theclass "category"] << anchor ![name [c]] << [c]
+        packages = ulist ![theclass "packages"] <<
+                     map (uncurry htmlPackage) pm'
+        pm' = sortBy (comparing (map toUpper . fst)) pm
+
+-- | Render a particularly-named package (all versions of it).
+htmlPackage :: String -> VersionMap -> Html
+htmlPackage nm vs = li << pvsHtml (flattenPkgVersions nm vs)
+
+-- | Everything we want to know about a particular version of a
+-- package, nicely flattened and ready to use.  (Actually, we'd also
+-- like to use the synopsis, but this isn't exposed through the Cabal
+-- library, sadly.  We could conceivably grab it from the haddock docs
+-- (and hackage for packages with no local docs)  but this
+-- seems excessive so for now we forget about it.
+data PkgVersion = PkgVersion {
+    pvName ::String
+  , pvVersion :: Version
+  , pvExposed :: Bool
+  , pvHaddocks :: Maybe FilePath
+  } deriving (Eq, Ord, Show)
+
+-- | Flatten a given package's various versions into a list of
+-- PkgVersion values, which is much nicer to iterate over when
+-- building the HTML for this package.
+flattenPkgVersions :: String -> VersionMap -> [PkgVersion]
+flattenPkgVersions nm vs = concatMap (uncurry flatten') $ reverse vs
+  where flatten' :: Version -> [VersionInfo] -> [PkgVersion]
+        -- We reverse here to put user versions of pkgs before
+        -- identically versioned global versions.
+        flatten' v = concatMap (uncurry flatten'') . reverse
+          where flatten'' :: Bool -> [FilePath] -> [PkgVersion]
+                flatten'' ex [] = [PkgVersion nm v ex Nothing]
+                flatten'' ex ps = map (PkgVersion nm v ex . Just) ps
+
+-- | Render the HTML for a list of versions of (we presume) the same
+-- package.
+pvsHtml :: [PkgVersion] -> Html
+pvsHtml pvs = pvHeader (head pvs) +++ spaceHtml +++ pvVersions pvs
+
+-- | Render the "header" part of some package's HTML: name (with link
+-- to default version of local docs if available) and hackage link.
+pvHeader :: PkgVersion -> [Html]
+pvHeader pv = [maybeURL nme (pvHaddocks pv)
+              ,spaceHtml
+              ,anchor ![href $ hackagePath pv] << extLinkArrow
+              ]
+  where nme = if not (pvExposed pv) then "(" ++ nm ++ ")" else nm
+        nm = pvName pv
+
+-- | Render HTML linking to the various versions of a package
+-- installed, listed by version number only (name is implicit).
+pvVersions :: [PkgVersion] -> Html
+pvVersions [_] = noHtml -- Don't bother if there's only one version.
+pvVersions pvs = stringToHtml "[" +++
+                  intersperse comma (map pvOneVer pvs) +++
+                  stringToHtml "]"
+  where pvOneVer pv = maybeURL (showVersion $ pvVersion pv) (pvHaddocks pv)
+
+-- | Render a URL if there's a path; otherwise, just render some text.
+-- (Useful in cases where a package is installed but no documentation
+-- was found: you'll still get the hackage link.)
+maybeURL :: String -> Maybe String -> Html
+maybeURL nm Nothing = stringToHtml nm
+maybeURL nm (Just path) = anchor ![href $ joinPath [path, "index.html"]] << nm
+                           
+-- | Compute the URL to a package's page on hackage.
+hackagePath :: PkgVersion -> String
+hackagePath pv = "http://hackage.haskell.org/package/" ++ pvTag
+  where pvTag = pvName pv ++ "-" ++ showVersion (pvVersion pv)
+
+-- Some primitives.
+
+bull, comma, extLinkArrow, mdash :: Html
+bull = primHtml " &bull; "
+comma = stringToHtml ", "
+extLinkArrow = primHtml "&#x2b08;"
+mdash = primHtml " &mdash; "
