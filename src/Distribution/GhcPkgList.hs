@@ -1,5 +1,3 @@
-{-# LANGUAGE TupleSections #-}
-
 -- | Get contents of installed packages by querying "ghc-pkg" via
 -- Cabal.
 
