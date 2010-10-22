@@ -13,6 +13,7 @@ from the python at: <http://gimbo.org.uk/blog/2009/09/23/>
 
 -}
 
+import Control.Monad
 import Data.Char (isAlpha, toUpper)
 import Data.List
 import Data.Ord
@@ -185,10 +186,9 @@ pvVersions pvs = stringToHtml "[" +++
                   stringToHtml "]"
   where pvOneVer pv = maybeURL (showVersion $ pvVersion pv) (pvHaddocks pv)
 
--- | Render the synopsis of a package, if present.
+-- | Render the synopsis of a package, if present in any of its versions.
 pvSyn :: [PkgVersion] -> Html
-pvSyn (pv:_) = maybe noHtml (\x -> mdash +++ stringToHtml x) $ pvSynopsis pv
-pvSyn _ = noHtml
+pvSyn = maybe noHtml (\x -> mdash +++ stringToHtml x) . msum . map pvSynopsis
 
 -- | Render a URL if there's a path; otherwise, just render some text.
 -- (Useful in cases where a package is installed but no documentation
