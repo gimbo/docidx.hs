@@ -77,14 +77,14 @@ main = do
 -- just their (longer) descriptions.
 
 -- | Crawl haddock docs for package synopses.
-packageSynopses :: PackageMap -> IO [(String, String)]
+packageSynopses :: PackageMap [FilePath] -> IO [(String, String)]
 packageSynopses pm = forM (pkgsHaddocks pm) $ \(nm, ph) -> do
                        t <- packageTitle ph
                        return (nm, t)
 
 -- | Turn a PackageMap into an association list of (package name,
 -- haddock path) pairs (for the first version of each package).
-pkgsHaddocks :: PackageMap -> [(String, String)]
+pkgsHaddocks :: PackageMap [FilePath] -> [(String, String)]
 pkgsHaddocks pm = mapMaybe pkgHaddocks pm
   where pkgHaddocks (nm, vs) = do (_, v1) <- mhead $ reverse vs
                                   (_, haddocks) <- mhead v1
@@ -105,7 +105,7 @@ packageTitle haddock = do
 -- Rendering page HTML.
 
 -- | Create and render entire page.
-htmlPage :: PackageMap -> [(String, String)] -> UTCTime -> String
+htmlPage :: PackageMap [FilePath] -> [(String, String)] -> UTCTime -> String
 htmlPage pkgs syns now = renderHtml [htmlHeader, htmlBody]
   where htmlHeader = header << ((thetitle << pageTitle) : fav : css)
         fav = thelink ![rel "shortcut icon", href favIcon] << noHtml
@@ -123,10 +123,10 @@ htmlPage pkgs syns now = renderHtml [htmlHeader, htmlBody]
                            +++ (anchor ![href homePage] << stringToHtml "docidx")]
 
 -- | An AlphaMap groups packages together by their name's first character.
-type AlphaMap = M.Map Char PackageMap
+type AlphaMap = M.Map Char (PackageMap [FilePath])
 
 -- | Group packages together by their name's first character.
-alphabetize :: PackageMap -> AlphaMap
+alphabetize :: PackageMap [FilePath] -> AlphaMap
 alphabetize = foldr addAlpha M.empty
   where addAlpha (n, vs) = M.insertWith (++) c [(n, vs)]
           where c = if isAlpha c' then c' else '\0'
@@ -151,7 +151,8 @@ tocItemHtml TocSeparator = [mdash]
 tocItemHtml TocNewline = [br] -- Hmmm... you still get the bullets?
 
 -- | Render a collection of packages with the same first character.
-htmlPkgsAlpha :: [(String, String)] -> Char -> PackageMap -> [Html]
+htmlPkgsAlpha :: [(String, String)] -> Char -> PackageMap [FilePath] ->
+                 [Html]
 htmlPkgsAlpha syns c pm = [heading, packages]
   where heading = h3 ![theclass "category"] << anchor ![name [c]] << [c]
         packages = ulist ![theclass "packages"] <<
@@ -159,7 +160,8 @@ htmlPkgsAlpha syns c pm = [heading, packages]
         pm' = sortBy (comparing (map toUpper . fst)) pm
 
 -- | Render a particularly-named package (all versions of it).
-htmlPkg :: [(String, String)] -> String -> VersionMap -> Html
+htmlPkg :: [(String, String)] -> String -> VersionMap [FilePath] ->
+           Html
 htmlPkg syns nm vs = li << pvsHtml (flattenPkgVersions nm syn vs)
   where syn = nm `lookup` syns
 
@@ -180,9 +182,10 @@ data PkgVersion = PkgVersion {
 -- | Flatten a given package's various versions into a list of
 -- PkgVersion values, which is much nicer to iterate over when
 -- building the HTML for this package.
-flattenPkgVersions :: String -> Maybe String -> VersionMap -> [PkgVersion]
+flattenPkgVersions :: String -> Maybe String -> VersionMap [FilePath] ->
+                      [PkgVersion]
 flattenPkgVersions nm syn vs = concatMap (uncurry flatten') $ reverse vs
-  where flatten' :: Version -> [VersionInfo] -> [PkgVersion]
+  where flatten' :: Version -> [VersionInfo [FilePath]] -> [PkgVersion]
         -- We reverse here to put user versions of pkgs before
         -- identically versioned global versions.
         flatten' v = concatMap (uncurry flatten'') . reverse

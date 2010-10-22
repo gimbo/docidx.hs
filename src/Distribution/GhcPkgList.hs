@@ -25,21 +25,23 @@ import Distribution.Version (Version)
 
 -- | A package map maps package names to information about the
 -- versions installed.
-type PackageMap = [(String, VersionMap)]
+type PackageMap a = [(String, VersionMap a)]
 
 -- | A version map maps version numbers to information about the
 -- various installations of that version.
-type VersionMap = [(Version, [VersionInfo])]
+type VersionMap a = [(Version, [VersionInfo a])]
 
--- | The information we're interested about a version: is it exposed,
--- and where are its Haddock docs installed?  (Not sure why there can
--- be multiple haddock paths, but that's what Cabal gives us, so
--- that's what we take.)
-type VersionInfo = (Bool, [FilePath])
+-- | Information about a particular version of a package; at a minimum
+-- this is whether it is exposed; other information may be attached
+-- (in particular we will attach paths to Haddock docs and, later,
+-- whether those docs exist and are readable, and their synopses).
+type VersionInfo a = (Bool, a)
+
+
 
 -- | Get exposure/haddock information about all versions of all
 -- installed packages.
-installedPackages :: IO PackageMap
+installedPackages :: IO (PackageMap [FilePath])
 installedPackages = fmap groupPackages listInstalledPackages
 
 -- Nothing from here down is exposed.
@@ -54,13 +56,15 @@ listInstalledPackages =
 
 -- | Group installed package information together by package name and
 -- version number.
-groupPackages :: PackageIndex -> PackageMap
+groupPackages :: PackageIndex -> PackageMap [FilePath]
 groupPackages = foldr groupPackages' [] . allPackagesByName
 
-groupPackages' :: [I.InstalledPackageInfo] -> PackageMap -> PackageMap
+groupPackages' :: [I.InstalledPackageInfo] -> PackageMap [FilePath] ->
+                  PackageMap [FilePath]
 groupPackages' ps pm = foldr groupPackages'' pm ps
 
-groupPackages'' :: I.InstalledPackageInfo -> PackageMap -> PackageMap
+groupPackages'' :: I.InstalledPackageInfo -> PackageMap [FilePath] ->
+                   PackageMap [FilePath]
 groupPackages'' ipi pm =
   addToAL pm nm $ addToVersionMap vs' ver (ex, had)
     where vs' = fromMaybe [] (nm `lookup` pm)
@@ -70,7 +74,8 @@ groupPackages'' ipi pm =
           ex = I.exposed ipi
           had = I.haddockHTMLs ipi
 
-addToVersionMap :: VersionMap -> Version -> VersionInfo -> VersionMap
+addToVersionMap :: Eq a => VersionMap a -> Version -> VersionInfo a ->
+                   VersionMap a
 addToVersionMap vm v vi = addToAL vm v xs'
   where xs' = case v `lookup` vm of
                 -- No duplicates please.
