@@ -101,7 +101,7 @@ addToVersionMap vm v vi = addToAL vm v xs'
 -- and are readable, and if so, extracting the package synopsis from
 -- each).
 checkHaddocks :: PackageMap FilePath -> IO (PackageMap HaddockInfo)
-checkHaddocks = pmMegaLift checkHaddock -- XXX $ mapM checkHaddock
+checkHaddocks = pmMegaLift checkHaddock
 
 -- Try to read the index.html file of some Haddock directory, and
 -- extract the package synopsis.
