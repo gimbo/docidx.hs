@@ -70,7 +70,7 @@ main = do
 -- Rendering page HTML.
 
 -- | Create and render entire page.
-htmlPage :: PackageMap [HaddockInfo] -> UTCTime -> String
+htmlPage :: PackageMap HaddockInfo -> UTCTime -> String
 htmlPage pkgs now = renderHtml [htmlHeader, htmlBody]
   where htmlHeader = header << ((thetitle << pageTitle) : fav : css)
         fav = thelink ![rel "shortcut icon", href favIcon] << noHtml
@@ -88,10 +88,10 @@ htmlPage pkgs now = renderHtml [htmlHeader, htmlBody]
                            +++ (anchor ![href homePage] << stringToHtml "docidx")]
 
 -- | An AlphaMap groups packages together by their name's first character.
-type AlphaMap = M.Map Char (PackageMap [HaddockInfo])
+type AlphaMap = M.Map Char (PackageMap HaddockInfo)
 
 -- | Group packages together by their name's first character.
-alphabetize :: PackageMap [HaddockInfo] -> AlphaMap
+alphabetize :: PackageMap HaddockInfo -> AlphaMap
 alphabetize = foldr addAlpha M.empty
   where addAlpha (n, vs) = M.insertWith (++) c [(n, vs)]
           where c = if isAlpha c' then c' else '\0'
@@ -116,7 +116,7 @@ tocItemHtml TocSeparator = [mdash]
 tocItemHtml TocNewline = [br] -- Hmmm... you still get the bullets?
 
 -- | Render a collection of packages with the same first character.
-htmlPkgsAlpha :: Char -> PackageMap [HaddockInfo] -> [Html]
+htmlPkgsAlpha :: Char -> PackageMap HaddockInfo -> [Html]
 htmlPkgsAlpha c pm = [heading, packages]
   where heading = h3 ![theclass "category"] << anchor ![name [c]] << [c]
         packages = ulist ![theclass "packages"] <<
@@ -124,7 +124,7 @@ htmlPkgsAlpha c pm = [heading, packages]
         pm' = sortBy (comparing (map toUpper . fst)) pm
 
 -- | Render a particularly-named package (all versions of it).
-htmlPkg :: String -> VersionMap [HaddockInfo] -> Html
+htmlPkg :: String -> VersionMap HaddockInfo -> Html
 htmlPkg nm vs = li << pvsHtml (flattenPkgVersions nm vs)
 
 -- | Everything we want to know about a particular version of a
@@ -144,9 +144,9 @@ data PkgVersion = PkgVersion {
 -- | Flatten a given package's various versions into a list of
 -- PkgVersion values, which is much nicer to iterate over when
 -- building the HTML for this package.
-flattenPkgVersions :: String -> VersionMap [HaddockInfo] -> [PkgVersion]
+flattenPkgVersions :: String -> VersionMap HaddockInfo -> [PkgVersion]
 flattenPkgVersions nm vs = concatMap (uncurry flatten') $ reverse vs
-  where flatten' :: Version -> [VersionInfo [HaddockInfo]] -> [PkgVersion]
+  where flatten' :: Version -> [VersionInfo HaddockInfo] -> [PkgVersion]
         -- We reverse here to put user versions of pkgs before
         -- identically versioned global versions.
         flatten' v = concatMap (uncurry flatten3) . reverse

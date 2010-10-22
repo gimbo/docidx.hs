@@ -43,7 +43,7 @@ type VersionMap a = [(Version, [VersionInfo a])]
 -- this is whether it is exposed; other information may be attached
 -- (in particular we will attach paths to Haddock docs and, later,
 -- whether those docs exist and are readable, and their synopses).
-type VersionInfo a = (Bool, a)
+type VersionInfo a = (Bool, [a])
 
 -- | Cabal tells us about locations of Haddock docs, but they might
 -- not actually exist or be readable.  If they do, we're interested in
@@ -53,7 +53,7 @@ type HaddockInfo = Maybe (FilePath, String)
 
 -- | Get exposure/haddock information about all versions of all
 -- installed packages.
-installedPackages :: IO (PackageMap [HaddockInfo])
+installedPackages :: IO (PackageMap HaddockInfo)
 installedPackages = fmap groupPackages listInstalledPackages >>= checkHaddocks
 
 -- Nothing from here down is exposed.
@@ -70,15 +70,15 @@ listInstalledPackages =
 -- version number.  At this stage all we know about the Haddock docs
 -- are where Cabal says they are (not whether they exist), so
 -- PackageMap is parameterised over such paths.
-groupPackages :: PackageIndex -> PackageMap [FilePath]
+groupPackages :: PackageIndex -> PackageMap FilePath
 groupPackages = foldr groupPackages' [] . allPackagesByName
 
-groupPackages' :: [I.InstalledPackageInfo] -> PackageMap [FilePath] ->
-                  PackageMap [FilePath]
+groupPackages' :: [I.InstalledPackageInfo] -> PackageMap FilePath ->
+                  PackageMap FilePath
 groupPackages' ps pm = foldr groupPackages'' pm ps
 
-groupPackages'' :: I.InstalledPackageInfo -> PackageMap [FilePath] ->
-                   PackageMap [FilePath]
+groupPackages'' :: I.InstalledPackageInfo -> PackageMap FilePath ->
+                   PackageMap FilePath
 groupPackages'' ipi pm =
   addToAL pm nm $ addToVersionMap vs' ver (ex, had)
     where vs' = fromMaybe [] (nm `lookup` pm)
@@ -102,8 +102,8 @@ addToVersionMap vm v vi = addToAL vm v xs'
 -- into one over HaddockInfo values (checking if the Haddocks exist
 -- and are readable, and if so, extracting the package synopsis from
 -- each).
-checkHaddocks :: PackageMap [FilePath] -> IO (PackageMap [HaddockInfo])
-checkHaddocks = pmMegaLift $ mapM checkHaddock
+checkHaddocks :: PackageMap FilePath -> IO (PackageMap HaddockInfo)
+checkHaddocks = pmMegaLift checkHaddock -- XXX $ mapM checkHaddock
 
 -- Try to read the index.html file of some Haddock directory, and
 -- extract the package synopsis.
@@ -131,7 +131,7 @@ parsePackageSynopsis s = if null w then t else unwords $ tail w
 -- expect that if I understood, say, Control.Arrow, better, this could
 -- be written more sensibly.
 pmMegaLift :: (a -> IO b) -> PackageMap a -> IO (PackageMap b)
-pmMegaLift = mapSndM . mapSndM . mapSndM
+pmMegaLift = mapSndM . mapSndM . mapSndM . mapM
   where mapSndM = mapM . sndM
         -- | Weird monadic second-ish combinator.  I bet there's
         -- already something in Control.Arrow which does this.
