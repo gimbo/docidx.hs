@@ -1,3 +1,5 @@
+{-# LANGUAGE TupleSections #-}
+
 -- | Get contents of installed packages by querying "ghc-pkg" via
 -- Cabal.
 
@@ -5,9 +7,13 @@ module Distribution.GhcPkgList (
   PackageMap,
   VersionMap,
   VersionInfo,
-  installedPackages
+  HaddockInfo,
+  installedPackages,
+  installedPackages'
 ) where
 
+import qualified Control.Exception as C
+import Data.List
 import Data.List.Utils (addToAL)
 import Data.Maybe (fromMaybe)
 import qualified Distribution.InstalledPackageInfo as I
@@ -22,6 +28,9 @@ import Distribution.Simple.Program.Db (addKnownPrograms,
                                        emptyProgramDb)
 import Distribution.Verbosity (normal)
 import Distribution.Version (Version)
+import System.FilePath
+import System.IO
+import Text.HTML.TagSoup
 
 -- | A package map maps package names to information about the
 -- versions installed.
@@ -37,12 +46,19 @@ type VersionMap a = [(Version, [VersionInfo a])]
 -- whether those docs exist and are readable, and their synopses).
 type VersionInfo a = (Bool, a)
 
-
+-- | Cabal tells us about locations of Haddock docs, but they might
+-- not actually exist or be readable.  If they do, we're interested in
+-- their path and the package synopsis extracted from the title tag of
+-- their index.html.
+type HaddockInfo = Maybe (FilePath, String)
 
 -- | Get exposure/haddock information about all versions of all
 -- installed packages.
 installedPackages :: IO (PackageMap [FilePath])
 installedPackages = fmap groupPackages listInstalledPackages
+
+installedPackages' :: IO (PackageMap [HaddockInfo])
+installedPackages' = fmap groupPackages listInstalledPackages >>= checkHaddocks
 
 -- Nothing from here down is exposed.
 
@@ -81,3 +97,44 @@ addToVersionMap vm v vi = addToAL vm v xs'
                 -- No duplicates please.
                 Just xs -> if vi `elem` xs then xs else xs ++ [vi]
                 Nothing -> [vi]
+
+-- Checking existence of Haddock docs, and reading synopses from them.
+
+-- | Given a PackageMap over paths to Haddock directories, turn it
+-- into one over HaddockInfo values (checking if the Haddocks exist
+-- and are readable, and if so, extracting the package synopsis from
+-- each).
+checkHaddocks :: PackageMap [FilePath] -> IO (PackageMap [HaddockInfo])
+checkHaddocks = pmMegaLift $ mapM checkHaddock
+
+-- Here's where the action is.
+checkHaddock :: FilePath -> IO HaddockInfo
+checkHaddock hp =
+  C.catch
+    (do r <- readFile $ joinPath [hp, "index.html"]
+        return $ Just (hp, packageTitle r))
+    (\e -> do let err = show (e :: C.IOException)
+              hPutStr stderr ("Warning: Couldn't open " ++ hp ++ ": " ++ err)
+              return Nothing)
+
+-- | Parses a HTML document to find its title tag
+packageTitle :: String -> String
+packageTitle s = if null w then t else unwords $ tail w
+  where w = words t
+        t = findTitleTag $ canonicalizeTags $ parseTags s
+        findTitleTag ts = maybe "" (fromTagText . snd) $ seekT ts
+        seekT ts = find (isTagOpenName "title" . fst) (zip ts $ tail ts)
+
+-- | Lift a function on the second element of a VersionInfo into a
+-- function on a PackageMap.  Sorry this is so wild - it's just
+-- digging deep into the (fairly repetitive) PackageMap structure; I
+-- expect that if I understood, say, Control.Arrow, better, this could
+-- be written more sensibly.
+pmMegaLift :: (a -> IO b) -> PackageMap a -> IO (PackageMap b)
+pmMegaLift = mapSndM . mapSndM . mapSndM
+  where mapSndM = mapM . sndM
+        -- | Weird monadic second-ish combinator.  I bet there's
+        -- already something in Control.Arrow which does this.
+        sndM :: Monad m => (a -> m b) -> (c, a) -> m (c, b)
+        sndM f (x, y) = do y' <- f y
+                           return (x, y')
