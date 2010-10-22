@@ -13,9 +13,7 @@ from the python at: <http://gimbo.org.uk/blog/2009/09/23/>
 
 -}
 
-import Control.Monad
 import Data.Char (isAlpha, toUpper)
-import Data.Maybe
 import Data.List
 import Data.Ord
 import Data.Time
@@ -25,7 +23,6 @@ import System.Environment
 import System.FilePath
 import System.Locale
 import Text.Html
-import Text.HTML.TagSoup
 
 import Distribution.GhcPkgList
 
@@ -65,48 +62,16 @@ homePage = "http://github.com/gimbo/docidx.hs"
 main :: IO ()
 main = do
   pkgs <- installedPackages
-  syns <- packageSynopses pkgs
   now <- getCurrentTime
-  let page = htmlPage pkgs syns now
+  let page = htmlPage pkgs now
   args <- getArgs
   if not (null args) then writeFile (head args) page else putStrLn page
-
--- Computing package synopses by crawling haddock docs for installed
--- packages.  Would love to get this info from Cabal directly, but at
--- time of writing it doesn't expose synopses of installed packages -
--- just their (longer) descriptions.
-
--- | Crawl haddock docs for package synopses.
-packageSynopses :: PackageMap [FilePath] -> IO [(String, String)]
-packageSynopses pm = forM (pkgsHaddocks pm) $ \(nm, ph) -> do
-                       t <- packageTitle ph
-                       return (nm, t)
-
--- | Turn a PackageMap into an association list of (package name,
--- haddock path) pairs (for the first version of each package).
-pkgsHaddocks :: PackageMap [FilePath] -> [(String, String)]
-pkgsHaddocks pm = mapMaybe pkgHaddocks pm
-  where pkgHaddocks (nm, vs) = do (_, v1) <- mhead $ reverse vs
-                                  (_, haddocks) <- mhead v1
-                                  hp <- mhead haddocks
-                                  return (nm, hp)
-        mhead xs = if null xs then Nothing else Just (head xs)
-
--- | Parses a HTML document to find its title tag
-packageTitle :: FilePath -> IO String
-packageTitle haddock = do
-    s <- readFile $ joinPath [haddock, "index.html"]
-    let t = findTitleTag $ canonicalizeTags $ parseTags s
-        w = words t
-    return $ if null w then t else unwords $ tail w
-  where findTitleTag ts = maybe "" (fromTagText . snd) $ seekT ts
-        seekT ts = find (isTagOpenName "title" . fst) (zip ts $ tail ts)
 
 -- Rendering page HTML.
 
 -- | Create and render entire page.
-htmlPage :: PackageMap [FilePath] -> [(String, String)] -> UTCTime -> String
-htmlPage pkgs syns now = renderHtml [htmlHeader, htmlBody]
+htmlPage :: PackageMap [FilePath] -> UTCTime -> String
+htmlPage pkgs now = renderHtml [htmlHeader, htmlBody]
   where htmlHeader = header << ((thetitle << pageTitle) : fav : css)
         fav = thelink ![rel "shortcut icon", href favIcon] << noHtml
         css = map oneCss pageCss
@@ -115,7 +80,7 @@ htmlPage pkgs syns now = renderHtml [htmlHeader, htmlBody]
         htmlBody = body << (title' ++ toc ++ secs ++ nowFoot)
           where title' = [h2 << "Local packages with docs"]
                 toc = [htmlToc am]
-                secs = concatMap (uncurry $ htmlPkgsAlpha syns) $ M.assocs am
+                secs = concatMap (uncurry $ htmlPkgsAlpha) $ M.assocs am
                 am = alphabetize pkgs
                 now' = formatTime defaultTimeLocale rfc822DateFormat now
                 nowFoot = [p ![theclass "toc"] $
@@ -151,19 +116,17 @@ tocItemHtml TocSeparator = [mdash]
 tocItemHtml TocNewline = [br] -- Hmmm... you still get the bullets?
 
 -- | Render a collection of packages with the same first character.
-htmlPkgsAlpha :: [(String, String)] -> Char -> PackageMap [FilePath] ->
-                 [Html]
-htmlPkgsAlpha syns c pm = [heading, packages]
+htmlPkgsAlpha :: Char -> PackageMap [FilePath] -> [Html]
+htmlPkgsAlpha c pm = [heading, packages]
   where heading = h3 ![theclass "category"] << anchor ![name [c]] << [c]
         packages = ulist ![theclass "packages"] <<
-                     map (uncurry $ htmlPkg syns) pm'
+                     map (uncurry htmlPkg) pm'
         pm' = sortBy (comparing (map toUpper . fst)) pm
 
 -- | Render a particularly-named package (all versions of it).
-htmlPkg :: [(String, String)] -> String -> VersionMap [FilePath] ->
-           Html
-htmlPkg syns nm vs = li << pvsHtml (flattenPkgVersions nm syn vs)
-  where syn = nm `lookup` syns
+htmlPkg :: String -> VersionMap [FilePath] -> Html
+htmlPkg nm vs = li << pvsHtml (flattenPkgVersions nm syn vs)
+  where syn = Nothing
 
 -- | Everything we want to know about a particular version of a
 -- package, nicely flattened and ready to use.  (Actually, we'd also
