@@ -70,7 +70,7 @@ main = do
 -- Rendering page HTML.
 
 -- | Create and render entire page.
-htmlPage :: PackageMap [FilePath] -> UTCTime -> String
+htmlPage :: PackageMap [HaddockInfo] -> UTCTime -> String
 htmlPage pkgs now = renderHtml [htmlHeader, htmlBody]
   where htmlHeader = header << ((thetitle << pageTitle) : fav : css)
         fav = thelink ![rel "shortcut icon", href favIcon] << noHtml
@@ -80,7 +80,7 @@ htmlPage pkgs now = renderHtml [htmlHeader, htmlBody]
         htmlBody = body << (title' ++ toc ++ secs ++ nowFoot)
           where title' = [h2 << "Local packages with docs"]
                 toc = [htmlToc am]
-                secs = concatMap (uncurry $ htmlPkgsAlpha) $ M.assocs am
+                secs = concatMap (uncurry htmlPkgsAlpha) $ M.assocs am
                 am = alphabetize pkgs
                 now' = formatTime defaultTimeLocale rfc822DateFormat now
                 nowFoot = [p ![theclass "toc"] $
@@ -88,10 +88,10 @@ htmlPage pkgs now = renderHtml [htmlHeader, htmlBody]
                            +++ (anchor ![href homePage] << stringToHtml "docidx")]
 
 -- | An AlphaMap groups packages together by their name's first character.
-type AlphaMap = M.Map Char (PackageMap [FilePath])
+type AlphaMap = M.Map Char (PackageMap [HaddockInfo])
 
 -- | Group packages together by their name's first character.
-alphabetize :: PackageMap [FilePath] -> AlphaMap
+alphabetize :: PackageMap [HaddockInfo] -> AlphaMap
 alphabetize = foldr addAlpha M.empty
   where addAlpha (n, vs) = M.insertWith (++) c [(n, vs)]
           where c = if isAlpha c' then c' else '\0'
@@ -116,7 +116,7 @@ tocItemHtml TocSeparator = [mdash]
 tocItemHtml TocNewline = [br] -- Hmmm... you still get the bullets?
 
 -- | Render a collection of packages with the same first character.
-htmlPkgsAlpha :: Char -> PackageMap [FilePath] -> [Html]
+htmlPkgsAlpha :: Char -> PackageMap [HaddockInfo] -> [Html]
 htmlPkgsAlpha c pm = [heading, packages]
   where heading = h3 ![theclass "category"] << anchor ![name [c]] << [c]
         packages = ulist ![theclass "packages"] <<
@@ -124,9 +124,8 @@ htmlPkgsAlpha c pm = [heading, packages]
         pm' = sortBy (comparing (map toUpper . fst)) pm
 
 -- | Render a particularly-named package (all versions of it).
-htmlPkg :: String -> VersionMap [FilePath] -> Html
-htmlPkg nm vs = li << pvsHtml (flattenPkgVersions nm syn vs)
-  where syn = Nothing
+htmlPkg :: String -> VersionMap [HaddockInfo] -> Html
+htmlPkg nm vs = li << pvsHtml (flattenPkgVersions nm vs)
 
 -- | Everything we want to know about a particular version of a
 -- package, nicely flattened and ready to use.  (Actually, we'd also
@@ -145,16 +144,21 @@ data PkgVersion = PkgVersion {
 -- | Flatten a given package's various versions into a list of
 -- PkgVersion values, which is much nicer to iterate over when
 -- building the HTML for this package.
-flattenPkgVersions :: String -> Maybe String -> VersionMap [FilePath] ->
-                      [PkgVersion]
-flattenPkgVersions nm syn vs = concatMap (uncurry flatten') $ reverse vs
-  where flatten' :: Version -> [VersionInfo [FilePath]] -> [PkgVersion]
+flattenPkgVersions :: String -> VersionMap [HaddockInfo] -> [PkgVersion]
+flattenPkgVersions nm vs = concatMap (uncurry flatten') $ reverse vs
+  where flatten' :: Version -> [VersionInfo [HaddockInfo]] -> [PkgVersion]
         -- We reverse here to put user versions of pkgs before
         -- identically versioned global versions.
-        flatten' v = concatMap (uncurry flatten'') . reverse
-          where flatten'' :: Bool -> [FilePath] -> [PkgVersion]
-                flatten'' ex [] = [PkgVersion nm syn v ex Nothing]
-                flatten'' ex ps = map (PkgVersion nm syn v ex . Just) ps
+        flatten' v = concatMap (uncurry flatten3) . reverse
+          where flatten3 :: Bool -> [HaddockInfo] -> [PkgVersion]
+                flatten3 ex [] = [PkgVersion nm Nothing v ex Nothing]
+                flatten3 ex ps = map (mkPv nm v ex) ps
+
+-- | Construct a PkgVersion from information about a single version of
+-- a package.
+mkPv :: String -> Version -> Bool -> HaddockInfo -> PkgVersion
+mkPv nm v ex Nothing = PkgVersion nm Nothing v ex Nothing
+mkPv nm v ex (Just (hp, syn)) = PkgVersion nm (Just syn) v ex (Just hp)
 
 -- | Render the HTML for a list of versions of (we presume) the same
 -- package.

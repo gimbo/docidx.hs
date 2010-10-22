@@ -8,8 +8,7 @@ module Distribution.GhcPkgList (
   VersionMap,
   VersionInfo,
   HaddockInfo,
-  installedPackages,
-  installedPackages'
+  installedPackages
 ) where
 
 import qualified Control.Exception as C
@@ -54,11 +53,8 @@ type HaddockInfo = Maybe (FilePath, String)
 
 -- | Get exposure/haddock information about all versions of all
 -- installed packages.
-installedPackages :: IO (PackageMap [FilePath])
-installedPackages = fmap groupPackages listInstalledPackages
-
-installedPackages' :: IO (PackageMap [HaddockInfo])
-installedPackages' = fmap groupPackages listInstalledPackages >>= checkHaddocks
+installedPackages :: IO (PackageMap [HaddockInfo])
+installedPackages = fmap groupPackages listInstalledPackages >>= checkHaddocks
 
 -- Nothing from here down is exposed.
 
@@ -71,7 +67,9 @@ listInstalledPackages =
          getInstalledPackages normal [GlobalPackageDB, UserPackageDB]
 
 -- | Group installed package information together by package name and
--- version number.
+-- version number.  At this stage all we know about the Haddock docs
+-- are where Cabal says they are (not whether they exist), so
+-- PackageMap is parameterised over such paths.
 groupPackages :: PackageIndex -> PackageMap [FilePath]
 groupPackages = foldr groupPackages' [] . allPackagesByName
 
@@ -107,19 +105,21 @@ addToVersionMap vm v vi = addToAL vm v xs'
 checkHaddocks :: PackageMap [FilePath] -> IO (PackageMap [HaddockInfo])
 checkHaddocks = pmMegaLift $ mapM checkHaddock
 
--- Here's where the action is.
+-- Try to read the index.html file of some Haddock directory, and
+-- extract the package synopsis.
 checkHaddock :: FilePath -> IO HaddockInfo
 checkHaddock hp =
   C.catch
     (do r <- readFile $ joinPath [hp, "index.html"]
-        return $ Just (hp, packageTitle r))
+        return $ Just (hp, parsePackageSynopsis r))
     (\e -> do let err = show (e :: C.IOException)
               hPutStr stderr ("Warning: Couldn't open " ++ hp ++ ": " ++ err)
               return Nothing)
 
--- | Parses a HTML document to find its title tag
-packageTitle :: String -> String
-packageTitle s = if null w then t else unwords $ tail w
+-- | Parses a Haddock index.html to find the package's synopsis (in
+-- the title tag).
+parsePackageSynopsis :: String -> String
+parsePackageSynopsis s = if null w then t else unwords $ tail w
   where w = words t
         t = findTitleTag $ canonicalizeTags $ parseTags s
         findTitleTag ts = maybe "" (fromTagText . snd) $ seekT ts
