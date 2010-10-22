@@ -9,6 +9,7 @@ module Distribution.GhcPkgList (
   installedPackages
 ) where
 
+import Control.Arrow
 import qualified Control.Exception as C
 import Data.List
 import Data.List.Utils (addToAL)
@@ -131,8 +132,8 @@ parsePackageSynopsis s = if null w then t else unwords $ tail w
 pmMegaLift :: (a -> IO b) -> PackageMap a -> IO (PackageMap b)
 pmMegaLift = mapSndM . mapSndM . mapSndM . mapM
   where mapSndM = mapM . sndM
-        -- | Weird monadic second-ish combinator.  I bet there's
-        -- already something in Control.Arrow which does this.
-        sndM :: Monad m => (a -> m b) -> (c, a) -> m (c, b)
-        sndM f (x, y) = do y' <- f y
-                           return (x, y')
+        -- | Weird monadic second-ish combinator.  Modified from answers on
+        -- http://stackoverflow.com/questions/3998133/
+        --   does-this-simple-haskell-function-already-have-a-well-known-name
+        sndM :: (Functor m, Monad m) => (a -> m b) -> (c, a) -> m (c, b)
+        sndM f = uncurry (fmap . (,)) . second f
