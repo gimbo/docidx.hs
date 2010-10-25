@@ -24,6 +24,9 @@ include extra links you think are handy (e.g. to the per-module index,
 to local `ghc` documentation, to the Haskell report, etc. - whatever
 you want).
 
+The distribution includes
+[an example of the output](http://github.com/gimbo/docidx.hs/blob/master/examples/example.html).
+
 ## Installation
 
 The tool hasn't been released to hackage yet, so just download the
