@@ -1,6 +1,6 @@
 # docidx.hs
 
-docidx.hs - create an HTML index of your installed Haskell packages
+docidx.hs - create an HTML index of your installed Haskell packages.
 
 ## Overview
 
@@ -51,10 +51,12 @@ I run it every hour from `cron`, personally.
 
 ## Configuration
 
-`docidx` will look for the file `config` in the application's as
-reported by `System.Directory.getAppUserDataDirectory` (so in Unixy
-systems that's `~/.docidx/config`, and in Windows it's probably
-`C:/Documents And Settings/user/Application Data/docidx/config`).
+`docidx` will look for the file `config` in the application's user
+data directory as reported by
+`System.Directory.getAppUserDataDirectory` (so in Unixy systems that's
+`~/.docidx/config`, and in Windows it's probably `C:/Documents And
+Settings/user/Application Data/docidx/config`).  `docidx` runs
+perfectly well if that file is absent; it doesn't ever write to it.
 
 An
 [example config file](http://github.com/gimbo/docidx.hs/blob/master/examples/config)
