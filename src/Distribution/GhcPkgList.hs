@@ -10,7 +10,6 @@ module Distribution.GhcPkgList (
 ) where
 
 import Control.Arrow
-import qualified Control.Exception as C
 import Data.List
 import Data.List.Utils (addToAL)
 import Data.Maybe (fromMaybe)
@@ -27,8 +26,11 @@ import Distribution.Simple.Program.Db (addKnownPrograms,
 import Distribution.Verbosity (normal)
 import Distribution.Version (Version)
 import System.FilePath
-import System.IO
 import Text.HTML.TagSoup
+
+-- XXX Slightly nasty that we import this here, as otherwise this
+-- module stands pleasantly independent of the rest of docidx.
+import Distribution.DocIdx.Common
 
 -- | A package map maps package names to information about the
 -- versions installed.
@@ -107,13 +109,11 @@ checkHaddocks = pmMegaLift checkHaddock
 -- Try to read the index.html file of some Haddock directory, and
 -- extract the package synopsis.
 checkHaddock :: FilePath -> IO HaddockInfo
-checkHaddock hp =
-  C.catch
-    (do r <- readFile $ joinPath [hp, "index.html"]
-        return $ Just (hp, parsePackageSynopsis r))
-    (\e -> do let err = show (e :: C.IOException)
-              hPutStr stderr ("Warning: Couldn't open " ++ hp ++ ": " ++ err)
-              return Nothing)
+checkHaddock hp = do
+  result <- tryReadFile $ joinPath [hp, "index.html"]
+  case result of
+    Just x -> return $ Just (hp, parsePackageSynopsis x)
+    Nothing -> return Nothing
 
 -- | Parses a Haddock index.html to find the package's synopsis (in
 -- the title tag).

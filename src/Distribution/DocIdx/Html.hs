@@ -40,7 +40,7 @@ htmlPage config pkgs now = renderHtml [htmlHeader, htmlBody]
                 nowFoot = [p ![theclass "toc"] $
                            stringToHtml ("Page rendered " ++ now' ++ " by ")
                            +++ (anchor ![href homePage] <<
-                                         stringToHtml "docidx")]
+                                         stringToHtml appName)]
 
 -- | An AlphaMap groups packages together by their name's first character.
 type AlphaMap = M.Map Char (PackageMap HaddockInfo)

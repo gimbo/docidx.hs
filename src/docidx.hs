@@ -24,7 +24,7 @@ main :: IO ()
 main = do
   pkgs <- installedPackages
   now <- getCurrentTime
-  let config = defaultConfig
-      page = htmlPage config pkgs now
+  config <- getConfig
+  let page = htmlPage config pkgs now
   args <- getArgs
   if not (null args) then writeFile (head args) page else putStrLn page

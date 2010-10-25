@@ -1,35 +1,80 @@
--- Configuration for docidx; should be (will be) dynamic/from a config
--- file.
+{-# LANGUAGE PackageImports #-}
+
+-- Configuration for docidx.
 
 module Distribution.DocIdx.Config where
 
+import Control.Monad
+import "monads-tf" Control.Monad.Writer
+import Data.Maybe
+import System.Directory
+import System.FilePath
+
 import Distribution.DocIdx.Common
 
+-- | Name of configuration file within user's application data
+-- directory.
+cfgFile :: FilePath
+cfgFile = "config"
+
+-- | Configuration information for docidx; at present only the
+-- tocExtras part is exposed via the config file, however.
 data DocIdxCfg = DocIdxCfg {
     pageTitle :: String
   , pageCss :: [String]
   , favIcon :: String
   , tocExtras :: [TocItem]
+  } deriving Show
+
+-- | Default configuration.
+defaultConfig :: DocIdxCfg
+defaultConfig = DocIdxCfg {
+    pageTitle = "Local Haskell package docs"
+  , pageCss = ["http://hackage.haskell.org/packages/hackage.css"]
+  , favIcon = "http://hackage.haskell.org/images/Cabal-tiny.png"
+  , tocExtras = []
   }
 
-defaultConfig :: DocIdxCfg
-defaultConfig =
-  DocIdxCfg { pageTitle = "Local Haskell package docs"
-            , pageCss = ["http://hackage.haskell.org/packages/hackage.css"]
-            , favIcon = "http://hackage.haskell.org/images/Cabal-tiny.png"
-            , tocExtras = TocSeparator : map (uncurry TocItem) [
-                           ("hackage", "http://hackage.haskell.org/packages/archive/pkg-list.html"),
-                           ("stdlibs", ghcDocs ++ "libraries/index.html"),
-                           ("index", "file:///Users/gimbo/.cabal/share/doc/index.html"),
-                           ("prelude", ghcDocs ++ "libraries/base-4.2.0.0/Prelude.html"),
-                           ("ghc", ghcDocs ++ "users_guide/index.html"),
-                           ("report", "file:///Users/gimbo/Documents/prog/haskell/haskell98-report-html/index.html"),
-                           ("parsec", "file:///Users/gimbo/Documents/prog/haskell/parsec/parsec.html"),
-                           ("haddock", "file:///Users/gimbo/Documents/prog/haskell/haddock/index.html"),
-                           ("quickcheck", "file:///Users/gimbo/Documents/prog/haskell/quickcheck/manual_body.html"),
-                           ("(for parsec)", "file:///Users/gimbo/Documents/prog/haskell/quickcheck/qc_for_parsec/Parsec%20Parser%20Testing%20with%20QuickCheck%20%C2%AB%20lstephen.html"),
-                           ("gtk2hs", "file:///Users/gimbo/Documents/prog/haskell/gtk2hs-docs-0.10.0/index.html"),
-                           ("cabal", ghcDocs ++ "Cabal/index.html"),
-                           ("nums", "http://book.realworldhaskell.org/read/using-typeclasses.html#numerictypes.conversion")]
-            }
-    where ghcDocs = "file:///Library/Frameworks/GHC.framework/Versions/Current/usr/share/doc/ghc/html/"
+-- | Read configuration file if present.
+getConfig :: IO DocIdxCfg
+getConfig = do
+  appDir <- getAppUserDataDirectory appName
+  let cfgPath = joinPath [appDir, cfgFile]
+  there <- doesFileExist cfgPath
+  extras <- if not there
+              then return []
+              else do dm <- tryReadFile cfgPath
+                      case dm of
+                        Nothing -> return []
+                        Just d -> readConfig d
+  return $ defaultConfig { tocExtras = extras }
+
+-- | Read a config file's contents.  At present we're only looking for
+-- TocItems, but other things could be there in the future
+-- (e.g. alternative CSS, etc.)
+readConfig :: String -> IO [TocItem]
+readConfig d = do
+  let (extras, l) = runWriter $ (liftM catMaybes . mapM readConfigLine) $ lines d
+  forM_ l putStrLn
+  return extras
+
+-- | Try to read a single line from the config file.
+readConfigLine :: String -> Writer [String] (Maybe TocItem)
+readConfigLine line = do
+  let ws = words line
+  case ws of
+    [] -> return Nothing
+    ("--":_) -> return Nothing
+    ("extraSeparator":_) -> return $ Just TocSeparator
+    ("extraNewline":_) -> return $ Just TocNewline
+    ("extra":xs) -> if length xs > 1
+                      then let name = unlines $ init xs
+                               url = last xs
+                           in return $ Just $ TocItem name url
+                      else warn "malformed extra" line
+    _ -> warn "unrecognised config line" line
+
+-- | Moan gently about any weird looking lines.
+warn :: String -> String -> Writer [String] (Maybe a)
+warn msg line = do tell ["Warning: " ++ msg ++ ": \"" ++ line ++ "\""]
+                   return Nothing
