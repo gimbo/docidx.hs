@@ -1,0 +1,36 @@
+-- Example configuration file for docidx.  
+
+-- Lines beginning with "-- " (like this one) are comments and
+-- ignored.  Empty lines are ignored as well, though lines containing
+-- only whitespace will - like any other unrecognised line - cause a
+-- warning to be issued.
+
+-- The only actual config items currently recognised are "extra URLs"
+-- for the table of contents - a list of links which appear after the
+-- A-Z index links.  There are three kinds:
+--
+-- extra name url -- A hyperlink.  The name is separated from the url
+--                   by whitespace.  The name can include whitespace.
+--                   The url can not.
+-- extraSeparator -- A separator character.
+-- extraNewline   -- A newline character (well, <br /> in the HTML).
+
+-- We start with a separator, between the (automatic) A-Z index links
+-- and these extras.
+extraSeparator
+
+-- Always nice to have a quick route to the package index.
+extra hackage      http://hackage.haskell.org/packages/archive/pkg-list.html
+
+-- The rest of the hyperlinks in this example are personal to the
+-- author and probably won't work for others without alteration.
+extra stdlibs      file:///Library/Frameworks/GHC.framework/Versions/Current/usr/share/doc/ghc/html/libraries/index.html
+extra index        file:///Users/gimbo/.cabal/share/doc/index.html
+extra prelude      file:///Library/Frameworks/GHC.framework/Versions/Current/usr/share/doc/ghc/html/libraries/base-4.2.0.0/Prelude.html
+extra ghc          file:///Library/Frameworks/GHC.framework/Versions/Current/usr/share/doc/ghc/html/users_guide/index.html
+extra 98 report    file:///Users/gimbo/Documents/prog/haskell/haskell98-report-html/index.html
+extra parsec       file:///Users/gimbo/Documents/prog/haskell/parsec/parsec.html
+extra haddock      file:///Users/gimbo/Documents/prog/haskell/haddock/index.html
+extra quickcheck   file:///Users/gimbo/Documents/prog/haskell/quickcheck/manual_body.html
+extra gtk2hs       file:///Users/gimbo/Documents/prog/haskell/gtk2hs-docs-0.10.0/index.html
+extra cabal        file:///Library/Frameworks/GHC.framework/Versions/Current/usr/share/doc/ghc/html/Cabal/index.html
