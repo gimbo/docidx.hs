@@ -3,7 +3,7 @@
 docidx.hs - create an HTML index of your installed Haskell packages.
 The index looks something like this:
 
-![Screenshot of example docidx output](http://github.com/gimbo/docidx.hs/blob/master/examples/example.png)
+![Screenshot of example docidx output](http://github.com/gimbo/docidx.hs/raw/master/examples/example.png)
 
 ## Overview
 
