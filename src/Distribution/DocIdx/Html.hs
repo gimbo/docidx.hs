@@ -21,7 +21,7 @@ import Distribution.GhcPkgList
 
 -- | Project homepage, for footer.
 homePage :: String
-homePage = "http://github.com/gimbo/docidx.hs"
+homePage = "http://hackage.haskell.org/package/docidx"
 
 -- | Create and render entire page.
 htmlPage :: DocIdxCfg -> PackageMap HaddockInfo -> UTCTime -> String
@@ -145,7 +145,7 @@ pvSyn = maybe noHtml (\x -> mdash +++ stringToHtml x) . msum . map pvSynopsis
 maybeURL :: String -> Maybe String -> Html
 maybeURL nm Nothing = stringToHtml nm
 maybeURL nm (Just path) = anchor ![href $ joinPath [path, "index.html"]] << nm
-                           
+
 -- | Compute the URL to a package's page on hackage.
 hackagePath :: PkgVersion -> String
 hackagePath pv = "http://hackage.haskell.org/package/" ++ pvTag

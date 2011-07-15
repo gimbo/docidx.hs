@@ -1,11 +1,9 @@
-{-# LANGUAGE PackageImports #-}
-
 -- Configuration for docidx.
 
 module Distribution.DocIdx.Config where
 
 import Control.Monad
-import "monads-tf" Control.Monad.Writer
+import Control.Monad.Writer
 import Data.Maybe
 import System.Directory
 import System.FilePath
@@ -30,7 +28,8 @@ data DocIdxCfg = DocIdxCfg {
 defaultConfig :: DocIdxCfg
 defaultConfig = DocIdxCfg {
     pageTitle = "Local Haskell package docs"
-  , pageCss = ["http://hackage.haskell.org/packages/hackage.css"]
+  , pageCss = ["http://hackage.haskell.org/packages/hackage.css"
+              ,"file:///Library/Frameworks/GHC.framework/Versions/Current/usr/share/doc/ghc/html/libraries/haddock.css"]
   , favIcon = "http://hackage.haskell.org/images/Cabal-tiny.png"
   , tocExtras = []
   }

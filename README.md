@@ -4,11 +4,11 @@ docidx.hs - create an HTML index of your installed Haskell packages.
 
 ## Overview
 
-`docidx` is a simple tool which creates an HTML index of your
-installed Haskell packages, with links to each package's Haddock docs
-locally and on Hackage.  While `cabal install` now creates and
-maintains an index "by module", sometimes it's nice to have this other
-view (and the quick links to Hackage).
+`docidx` is a small tool which creates an HTML index of your installed
+Haskell packages, with links to each package's Haddock docs locally
+and on Hackage.  While `cabal install` now creates and maintains an
+index "by module", sometimes it's nice to have this other view (and
+the quick links to Hackage).
 
 `docidx` works by querying your global and user package databases (via
 `ghc-pkg`, via the `Cabal` package) for information on all installed
@@ -25,32 +25,35 @@ to local `ghc` documentation, to the Haskell report, etc. - whatever
 you want).
 
 The distribution includes
-[an example of the output](http://github.com/gimbo/docidx.hs/blob/master/examples/example.html).
+[an example of the output HTML](http://github.com/gimbo/docidx.hs/blob/master/examples/example.html) and [a partial screenshot](http://github.com/gimbo/docidx.hs/blob/master/examples/example.png) of how that page looks..
 
 ## Installation
 
-The tool hasn't been released to hackage yet, so just download the
-source from the
+Either just use `cabal install` to pull the latest version from
+[hackage](http://hackage.haskell.org/package/docidx) and install it,
+or download the source from the
 [project home page](http://github.com/gimbo/docidx.hs) and
 build/install it using the usual `cabal` mechanism.
 
 ## Usage
 
 ...is very simple:
-  
+
     docidx
-    
+
 on its own will write its output (a single HTML page) to `stdout`,
 whereas:
 
     docidx filename
-    
+
 will attempt to write its output to the specified file.
 
 Warnings and errors (e.g. if `Cabal` reports that a package has
 Haddock docs, but they can't be found/read) go to `stderr`.
 
-I run it every hour from `cron`, personally.
+I run it every hour from `cron`, personally, piping its results to
+`~/.cabal/share/doc/docidx.html` - which I then use as the entry point
+for all my Haskell documentation needs.
 
 ## Configuration
 
@@ -74,7 +77,8 @@ the program's code:
 
   * Page title.
 
-  * CSS (currently just references hackage's).
+  * CSS (currently just references hackage's and local version of
+    haddock's).
 
   * Favicon (currently uses the hackage package list bullet point).
 
