@@ -72,7 +72,7 @@ listInstalledPackages =
 -- are where Cabal says they are (not whether they exist), so
 -- PackageMap is parameterised over such paths.
 groupPackages :: PackageIndex -> PackageMap FilePath
-groupPackages = foldr groupPackages' [] . allPackagesByName
+groupPackages = foldr groupPackages' [] . map snd . allPackagesByName
 
 groupPackages' :: [I.InstalledPackageInfo] -> PackageMap FilePath ->
                   PackageMap FilePath

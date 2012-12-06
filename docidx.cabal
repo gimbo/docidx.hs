@@ -1,5 +1,5 @@
 name:                   docidx
-version:                1.0.1
+version:                1.1.0
 license:                BSD3
 license-file:           LICENSE
 category:               Documentation
@@ -34,7 +34,7 @@ description:
 executable docidx
   hs-source-dirs:       src
   main-is:              docidx.hs
-  build-depends:        base >= 4 && < 5, Cabal >= 1.8, containers >= 0.3,
+  build-depends:        base >= 4 && < 5, Cabal >= 1.16, containers >= 0.3,
                         directory >= 1.0, filepath >= 1.1, html >= 1.0,
                         MissingH >= 1.1, mtl >= 2, old-locale, tagsoup >= 0.11,
                         time >= 1.1
