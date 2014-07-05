@@ -10,13 +10,15 @@ module Distribution.GhcPkgList (
 ) where
 
 import Control.Arrow
+import Data.Char (isSpace)
 import Data.List
 import Data.List.Utils (addToAL)
 import Data.Maybe (fromMaybe)
 import qualified Distribution.InstalledPackageInfo as I
 import qualified Distribution.Package as P
 import Distribution.Simple.Compiler (PackageDB(GlobalPackageDB,
-                                               UserPackageDB))
+                                               UserPackageDB,
+                                               SpecificPackageDB))
 import Distribution.Simple.GHC (getInstalledPackages)
 import Distribution.Simple.PackageIndex (PackageIndex, allPackagesByName)
 import Distribution.Simple.Program (ghcProgram, ghcPkgProgram)
@@ -54,18 +56,29 @@ type HaddockInfo = Maybe (FilePath, String)
 
 -- | Get exposure/haddock information about all versions of all
 -- installed packages.
-installedPackages :: IO (PackageMap HaddockInfo)
-installedPackages = fmap groupPackages listInstalledPackages >>= checkHaddocks
+installedPackages :: [String] -> IO (PackageMap HaddockInfo)
+installedPackages gs = fmap groupPackages (listInstalledPackages gs) >>= checkHaddocks
 
 -- Nothing from here down is exposed.
 
+-- | Get the specific package stack db from command line
+getGhcOpsPackageDB :: [String] -> [PackageDB]
+getGhcOpsPackageDB gs = map (SpecificPackageDB . trimGhcFlag) pkgDBOps
+    where
+        pkgDBOps = filter ("--package-db" `isInfixOf`) gs
+        trimGhcFlag = fst . dropWord . snd . dropWord
+        dropWord = span (not . isSpace) . dropBlanks
+        dropBlanks = snd . (span isSpace)
+
 -- | Get the list of installed packages, via Cabal's existing
 -- machinery.
-listInstalledPackages :: IO PackageIndex
-listInstalledPackages =
+listInstalledPackages :: [String] -> IO PackageIndex
+listInstalledPackages gs =
   let pdb = addKnownPrograms [ghcProgram,ghcPkgProgram] emptyProgramDb
   in configureAllKnownPrograms normal pdb >>=
-         getInstalledPackages normal [GlobalPackageDB, UserPackageDB]
+         getInstalledPackages normal pkgStackDB
+  where
+    pkgStackDB = [GlobalPackageDB, UserPackageDB] ++ (getGhcOpsPackageDB gs)
 
 -- | Group installed package information together by package name and
 -- version number.  At this stage all we know about the Haddock docs
