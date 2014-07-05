@@ -22,9 +22,15 @@ import Distribution.GhcPkgList
 
 main :: IO ()
 main = do
-  pkgs <- installedPackages
+  (gs,args) <- getArgs >>= extract
+  pkgs <- installedPackages gs
   now <- getCurrentTime
   config <- getConfig
   let page = htmlPage config pkgs now
-  args <- getArgs
   if not (null args) then writeFile (head args) page else putStrLn page
+  where
+    extract = return . go ([],[])
+    go (gs,as) ("-g":arg:ys)  = go (arg:gs,as) ys
+    go (gs,as) (y:ys)         = go (gs,y:as) ys
+    go (gs,as) []             = (gs,as)
+
